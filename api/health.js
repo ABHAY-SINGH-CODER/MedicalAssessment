@@ -1,32 +1,12 @@
-/**
- * GET /api/health
- * Health check — returns API status and available models.
- */
-
+/** GET /api/health */
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const hasKey = Boolean(process.env.HF_API_KEY);
-
-  return res.status(200).json({
+  res.status(200).json({
     status: 'ok',
-    service: 'MedGemma Risk Assessment API',
-    version: '1.0.0',
+    service: 'MedAssess API',
+    model: 'gemini-1.5-flash',
+    apiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
+    endpoints: ['/api/assess', '/api/health', '/api/models'],
     timestamp: new Date().toISOString(),
-    apiKeyConfigured: hasKey,
-    models: {
-      textOnly:   'google/medgemma-2b-it',
-      multimodal: 'google/medgemma-4b-it',
-    },
-    endpoints: {
-      'POST /api/assess':  'Run medical risk assessment (image + symptoms)',
-      'GET  /api/health':  'Health check',
-      'GET  /api/models':  'List available models and their capabilities',
-    },
-    disclaimer: 'For informational purposes only. Not a substitute for professional medical advice.',
   });
 }
