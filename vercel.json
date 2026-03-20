@@ -1,7 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/api/assess",  "destination": "/api/assess.js"  },
-    { "source": "/api/health",  "destination": "/api/health.js"  },
-    { "source": "/api/models",  "destination": "/api/models.js"  }
-  ]
-}
