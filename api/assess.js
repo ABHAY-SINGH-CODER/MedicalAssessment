@@ -20,7 +20,7 @@
 
 export const config = { maxDuration: 30 };
 
-const MODEL = 'gemini-1.5-flash';
+const MODEL = 'gemini-2.0-flash';
 const URL   = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const IMG_LABELS = {

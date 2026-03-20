@@ -4,7 +4,7 @@ export default function handler(req, res) {
   res.status(200).json({
     models: [
       {
-        id: 'gemini-1.5-flash',
+        id: 'gemini-2.0-flash',
         provider: 'Google',
         type: 'vision + text',
         contextWindow: 1000000,
@@ -17,3 +17,4 @@ export default function handler(req, res) {
     selection: 'gemini-1.5-flash is used for all requests (text and vision)',
   });
 }
+ 
