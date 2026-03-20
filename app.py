@@ -28,7 +28,7 @@ class InputData(BaseModel):
 # HELPER: ROBUST HF CALL
 # ======================
 def query_hf(model: str, payload: dict, is_binary: bool = False):
-    url = f"https://api-inference.huggingface.co/models/{model}"
+    url = f"https://router.huggingface.co/models/{model}"
     
     # Retry logic for model "Loading" states (503 errors)
     for _ in range(3):
