@@ -4,8 +4,9 @@ export default function handler(req, res) {
   res.status(200).json({
     status: 'ok',
     service: 'MedAssess API',
-    model: 'gemini-2.0-flash',
-    apiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
+    model: 'claude-haiku-4-5-20251001',
+    provider: 'Anthropic',
+    apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
     endpoints: ['/api/assess', '/api/health', '/api/models'],
     timestamp: new Date().toISOString(),
   });

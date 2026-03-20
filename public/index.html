@@ -298,17 +298,17 @@ option{background:var(--card)}
 
   <header>
     <div class="logo">med<span>/</span>assess</div>
-    <div class="status"><div class="dot"></div>gemini-2.0-flash</div>
+    <div class="status"><div class="dot"></div>claude-haiku</div>
   </header>
 
   <!-- API KEY -->
-  <span class="slabel">Gemini API Key</span>
+  <span class="slabel">Anthropic API Key</span>
   <div class="key-row">
-    <input type="password" id="apiKey" placeholder="AIza..."/>
+    <input type="password" id="apiKey" placeholder="sk-ant-..."/>
   </div>
   <div class="key-link" style="margin-top:-1.5rem;margin-bottom:2rem">
-    <a href="https://aistudio.google.com/app/apikey" target="_blank">Get free key →</a>
-    &nbsp;·&nbsp; or set <code>GEMINI_API_KEY</code> in Vercel env vars
+    <a href="https://console.anthropic.com/settings/keys" target="_blank">Get API key →</a>
+    &nbsp;·&nbsp; or set <code>ANTHROPIC_API_KEY</code> in Vercel env vars
   </div>
 
   <!-- IMAGE -->
@@ -430,7 +430,7 @@ option{background:var(--card)}
       <div class="code-block"><button class="copy-btn" onclick="copy(this)">copy</button><span class="c"># Text-only assessment</span>
 <span class="k">curl</span> -X POST https://your-app.vercel.app/api/assess \
   -H <span class="s">"Content-Type: application/json"</span> \
-  -H <span class="s">"Authorization: Bearer AIza..."</span> \
+  -H <span class="s">"Authorization: Bearer sk-ant-..."</span> \
   -d <span class="s">'{
     "age": 45,
     "sex": "Male",
@@ -448,7 +448,7 @@ option{background:var(--card)}
 <span class="c"># Then send with assessment</span>
 <span class="k">curl</span> -X POST https://your-app.vercel.app/api/assess \
   -H <span class="s">"Content-Type: application/json"</span> \
-  -H <span class="s">"Authorization: Bearer AIza..."</span> \
+  -H <span class="s">"Authorization: Bearer sk-ant-..."</span> \
   -d <span class="s">"{
     \"age\": 45,
     \"sex\": \"Male\",

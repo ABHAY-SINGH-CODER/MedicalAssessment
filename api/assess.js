@@ -1,27 +1,15 @@
 /**
  * POST /api/assess
- * Medical Risk Assessment using Google Gemini 1.5 Flash
+ * Medical Risk Assessment using Anthropic Claude API
  *
- * Body (JSON):
- *   image       {string}  base64-encoded image (optional)
- *   imageMime   {string}  e.g. "image/jpeg" (default: image/jpeg)
- *   imageType   {string}  xray | skin | wound | eye
- *   age         {string|number}
- *   sex         {string}
- *   history     {string}
- *   symptoms    {string}  comma-separated
- *   duration    {string}
- *   notes       {string}
- *
- * Auth:
- *   Set GEMINI_API_KEY in Vercel env vars  OR
- *   Pass  Authorization: Bearer AIza...  header
+ * Set ANTHROPIC_API_KEY in Vercel env vars
+ * Get key: https://console.anthropic.com/settings/keys
  */
 
 export const config = { maxDuration: 30 };
 
-const MODEL = 'gemini-2.0-flash';
-const URL   = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const MODEL = 'claude-haiku-4-5-20251001'; // fast + cheap
+const URL   = 'https://api.anthropic.com/v1/messages';
 
 const IMG_LABELS = {
   xray:  'chest X-ray or radiological scan',
@@ -30,7 +18,7 @@ const IMG_LABELS = {
   eye:   'eye or retinal image',
 };
 
-function buildPrompt({ age, sex, history, smoking, symptoms, duration, notes, imageType, hasImage }) {
+function buildPrompt({ age, sex, history, symptoms, duration, notes, imageType, hasImage }) {
   const imgLabel = IMG_LABELS[imageType] || 'medical image';
   return `You are a medical AI assistant. Respond ONLY with a valid JSON object — no markdown, no backticks, no explanation.
 
@@ -67,71 +55,80 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
 
-  const apiKey = process.env.GEMINI_API_KEY
+  const apiKey = process.env.ANTHROPIC_API_KEY
     || req.headers['authorization']?.replace('Bearer ', '').trim();
 
   if (!apiKey) {
     return res.status(401).json({
-      error: 'Missing Gemini API key.',
-      hint: 'Set GEMINI_API_KEY in Vercel env vars or pass Authorization: Bearer AIza... header.',
-      keyUrl: 'https://aistudio.google.com/app/apikey',
+      error: 'Missing Anthropic API key.',
+      hint: 'Set ANTHROPIC_API_KEY in Vercel env vars.',
+      keyUrl: 'https://console.anthropic.com/settings/keys',
     });
   }
 
   const {
     image, imageMime = 'image/jpeg', imageType = 'xray',
-    age, sex, history, smoking, symptoms, duration, notes,
+    age, sex, history, symptoms, duration, notes,
   } = req.body || {};
 
   const hasImage = Boolean(image);
-  const prompt   = buildPrompt({ age, sex, history, smoking, symptoms, duration, notes, imageType, hasImage });
+  const prompt = buildPrompt({ age, sex, history, symptoms, duration, notes, imageType, hasImage });
 
-  // Build Gemini parts — image first if present
-  const parts = [];
+  // Build content array — Claude supports vision natively
+  const content = [];
   if (hasImage) {
-    parts.push({ inline_data: { mime_type: imageMime, data: image } });
+    content.push({
+      type: 'image',
+      source: { type: 'base64', media_type: imageMime, data: image },
+    });
   }
-  parts.push({ text: prompt });
+  content.push({ type: 'text', text: prompt });
 
   try {
-    const gRes = await fetch(`${URL}?key=${apiKey}`, {
+    const aRes = await fetch(URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 1200 },
+        model: MODEL,
+        max_tokens: 1200,
+        messages: [{ role: 'user', content }],
       }),
     });
 
-    const gData = await gRes.json();
+    const aData = await aRes.json();
 
-    if (!gRes.ok) {
-      return res.status(gRes.status).json({
-        error: `Gemini API error ${gRes.status}`,
-        detail: gData?.error?.message || gRes.statusText,
-        hint: gRes.status === 400 ? 'Check your request payload.'
-            : gRes.status === 403 ? 'Invalid API key — check https://aistudio.google.com/app/apikey'
-            : undefined,
+    if (!aRes.ok) {
+      return res.status(aRes.status).json({
+        error: `Anthropic API error ${aRes.status}`,
+        detail: aData?.error?.message || aRes.statusText,
+        hint: aRes.status === 401
+          ? 'Invalid API key — check https://console.anthropic.com/settings/keys'
+          : aRes.status === 429
+          ? 'Rate limit hit — wait a moment and retry.'
+          : undefined,
       });
     }
 
-    const raw = gData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const raw = aData?.content?.[0]?.text || '';
     if (!raw) {
-      return res.status(502).json({ error: 'Empty response from Gemini.', raw: JSON.stringify(gData).slice(0, 300) });
+      return res.status(502).json({ error: 'Empty response from Claude.', raw: JSON.stringify(aData).slice(0, 300) });
     }
 
-    // Strip markdown fences and extract JSON object
     const cleaned = raw.replace(/```json|```/g, '').trim();
-    const match   = cleaned.match(/\{[\s\S]*\}/);
+    const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) {
-      return res.status(502).json({ error: 'Could not extract JSON from response.', raw: raw.slice(0, 500) });
+      return res.status(502).json({ error: 'Could not extract JSON.', raw: raw.slice(0, 400) });
     }
 
     let assessment;
     try { assessment = JSON.parse(match[0]); }
-    catch { return res.status(502).json({ error: 'JSON parse failed.', raw: match[0].slice(0, 500) }); }
+    catch { return res.status(502).json({ error: 'JSON parse failed.', raw: match[0].slice(0, 400) }); }
 
-    return res.status(200).json({ success: true, model: `Gemini ${MODEL}`, assessment });
+    return res.status(200).json({ success: true, model: `Claude ${MODEL}`, assessment });
 
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error', detail: err.message });
