@@ -1,29 +1,16 @@
 /**
  * POST /api/assess
- *
- * Medical Risk Assessment endpoint using Google MedGemma via HuggingFace.
- *
- * Body (multipart/form-data OR application/json):
- *   - image        (optional) base64 string of medical image
- *   - imageMime    (optional) e.g. "image/jpeg"
- *   - imageType    (optional) "xray" | "skin" | "wound" | "eye"
- *   - age          (optional) number
- *   - sex          (optional) string
- *   - history      (optional) string
- *   - smoking      (optional) string
- *   - symptoms     (optional) comma-separated string
- *   - duration     (optional) string
- *   - notes        (optional) string
- *
- * Returns:
- *   JSON { riskLevel, riskScore, title, summary, urgency, urgencyText, findings[], recommendations[] }
+ * Medical Risk Assessment using Google MedGemma via HuggingFace Inference API
  */
 
 export const config = { maxDuration: 30 };
 
-const HF_CHAT_URL  = 'https://router.huggingface.co/v1/chat/completions';
-const TEXT_MODEL   = 'google/medgemma-2b-it:hf-inference';
-const VISION_MODEL = 'google/medgemma-4b-it:hf-inference';
+// ✅ FIX 1: Use the standard HF Inference API, not the router
+const HF_API_BASE  = 'https://api-inference.huggingface.co/models';
+
+// ✅ FIX 2: Both use medgemma-4b-it — the 2b model does NOT exist
+const TEXT_MODEL   = 'google/medgemma-4b-it';
+const VISION_MODEL = 'google/medgemma-4b-it';
 
 const IMG_TYPE_LABELS = {
   xray:  'chest X-ray or radiological scan',
@@ -32,19 +19,16 @@ const IMG_TYPE_LABELS = {
   eye:   'eye or retinal image',
 };
 
-function buildSystemPrompt() {
-  return `You are MedGemma, Google's medical AI model specialized in clinical risk assessment. 
-You analyze patient information, symptoms, and medical images to produce structured risk assessments. 
-Always respond ONLY with a valid JSON object — no markdown, no explanation, no preamble.`;
-}
-
-function buildUserPrompt({ age, sex, history, smoking, symptoms, duration, notes, imageType, hasImage }) {
+function buildPrompt({ age, sex, history, smoking, symptoms, duration, notes, imageType, hasImage }) {
   const imgLabel = IMG_TYPE_LABELS[imageType] || 'medical image';
-  return `Perform a structured medical risk assessment for the following patient${hasImage ? `, including analysis of the provided ${imgLabel}` : ''}.
+  return `<start_of_turn>user
+You are MedGemma, Google's medical AI. Respond ONLY with a valid JSON object — no markdown, no preamble.
+
+Perform a structured medical risk assessment for this patient${hasImage ? `, including analysis of the provided ${imgLabel}` : ''}.
 
 PATIENT PROFILE:
 - Age: ${age || 'Not specified'}
-- Biological Sex: ${sex || 'Not specified'}  
+- Biological Sex: ${sex || 'Not specified'}
 - Medical History: ${history || 'None significant'}
 - Smoking Status: ${smoking || 'Unknown'}
 
@@ -54,11 +38,11 @@ REPORTED SYMPTOMS:
 - Additional Notes: ${notes || 'None'}
 ${hasImage ? `\nIMAGE PROVIDED: ${imgLabel} — analyze it for relevant clinical findings.` : ''}
 
-Respond with ONLY this JSON structure (no extra text):
+Respond with ONLY this JSON (no extra text):
 {
   "riskLevel": "LOW" | "MEDIUM" | "HIGH",
   "riskScore": <integer 1-100>,
-  "title": "<concise assessment title, max 8 words>",
+  "title": "<concise title, max 8 words>",
   "summary": "<2-3 sentence clinical summary>",
   "urgency": "EMERGENCY" | "SOON" | "ROUTINE" | "MONITOR",
   "urgencyText": "<specific action and timeframe>",
@@ -70,28 +54,27 @@ Respond with ONLY this JSON structure (no extra text):
   ],
   "differentials": ["<possible condition 1>", "<possible condition 2>"],
   "redFlags": ["<warning sign to watch for>"]
-}`;
+}
+<end_of_turn>
+<start_of_turn>model
+`;
 }
 
 export default async function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
   }
 
-  // Get HuggingFace API key — from env var (preferred) or Authorization header
   const hfApiKey = process.env.HF_API_KEY || req.headers['authorization']?.replace('Bearer ', '');
   if (!hfApiKey) {
     return res.status(401).json({
-      error: 'Missing HuggingFace API key. Set HF_API_KEY environment variable in Vercel, or pass Authorization: Bearer hf_xxx header.'
+      error: 'Missing HuggingFace API key.',
+      hint: 'Set HF_API_KEY in Vercel Environment Variables, or pass Authorization: Bearer hf_xxx header.'
     });
   }
 
@@ -106,38 +89,54 @@ export default async function handler(req, res) {
 
   const hasImage = Boolean(image);
   const modelId  = hasImage ? VISION_MODEL : TEXT_MODEL;
+  const prompt   = buildPrompt({ age, sex, history, smoking, symptoms, duration, notes, imageType, hasImage });
 
-  const userPrompt = buildUserPrompt({ age, sex, history, smoking, symptoms, duration, notes, imageType, hasImage });
+  // ✅ FIX 3: Use correct HF Inference API payload format
+  let payload;
 
-  // Build HuggingFace messages payload
-  const messages = [
-    { role: 'system', content: buildSystemPrompt() },
-    {
-      role: 'user',
-      content: hasImage
-        ? [
-            { type: 'image_url', image_url: { url: `data:${imageMime};base64,${image}` } },
-            { type: 'text', text: userPrompt }
-          ]
-        : userPrompt
-    }
-  ];
+  if (hasImage) {
+    // Vision: send image + text as multimodal input
+    payload = {
+      inputs: {
+        image: image,           // base64 string
+        text: prompt,
+      },
+      parameters: {
+        max_new_tokens: 1200,
+        temperature: 0.2,
+        return_full_text: false,
+      },
+    };
+  } else {
+    // Text-only: standard text generation
+    payload = {
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: 1200,
+        temperature: 0.2,
+        return_full_text: false,
+      },
+    };
+  }
 
   try {
-    const hfRes = await fetch(HF_CHAT_URL, {
+    const hfRes = await fetch(`${HF_API_BASE}/${modelId}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${hfApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: modelId,
-        messages,
-        max_tokens: 1200,
-        temperature: 0.2,
-        stream: false,
-      }),
+      body: JSON.stringify(payload),
     });
+
+    // Handle model still loading (HF returns 503)
+    if (hfRes.status === 503) {
+      const errBody = await hfRes.json().catch(() => ({}));
+      return res.status(503).json({
+        error: 'MedGemma model is still loading. Please wait 20–30 seconds and try again.',
+        estimated_time: errBody?.estimated_time || 20,
+      });
+    }
 
     if (!hfRes.ok) {
       const errBody = await hfRes.json().catch(() => ({}));
@@ -145,15 +144,26 @@ export default async function handler(req, res) {
         error: `HuggingFace API error: ${hfRes.status}`,
         detail: errBody?.error || errBody?.message || hfRes.statusText,
         hint: hfRes.status === 403
-          ? 'Accept the MedGemma model terms at https://huggingface.co/google/medgemma-4b-it'
+          ? 'You must accept MedGemma terms at https://huggingface.co/google/medgemma-4b-it before using this model.'
           : hfRes.status === 401
-          ? 'Invalid or expired HuggingFace API key.'
-          : undefined
+          ? 'Invalid or expired HuggingFace API key. Regenerate at https://huggingface.co/settings/tokens'
+          : undefined,
       });
     }
 
     const hfData = await hfRes.json();
-    const rawText = hfData.choices?.[0]?.message?.content || '';
+
+    // HF text-generation returns: [{ generated_text: "..." }]
+    const rawText = Array.isArray(hfData)
+      ? hfData[0]?.generated_text || ''
+      : hfData?.generated_text || '';
+
+    if (!rawText) {
+      return res.status(502).json({
+        error: 'MedGemma returned an empty response.',
+        raw: JSON.stringify(hfData).slice(0, 300),
+      });
+    }
 
     // Extract JSON from response
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
@@ -164,7 +174,15 @@ export default async function handler(req, res) {
       });
     }
 
-    const assessment = JSON.parse(jsonMatch[0]);
+    let assessment;
+    try {
+      assessment = JSON.parse(jsonMatch[0]);
+    } catch {
+      return res.status(502).json({
+        error: 'Failed to parse MedGemma JSON response.',
+        raw: jsonMatch[0].slice(0, 500),
+      });
+    }
 
     return res.status(200).json({
       success: true,
