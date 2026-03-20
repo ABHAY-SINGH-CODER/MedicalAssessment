@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MedGemma — AI Risk Assessment</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Syne:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #070b0f;
+      --s1:       #0d1520;
+      --s2:       #121d2b;
+      --s3:       #182536;
+      --border:   rgba(96,165,250,0.07);
+      --border2:  rgba(96,165,250,0.16);
+      --border3:  rgba(96,165,250,0.28);
+      --accent:   #38bdf8;
+      --accent2:  #0ea5e9;
+      --accent3:  #0369a1;
+      --text:     #dce8f5;
+      --text2:    #6a8caa;
+      --text3:    #b0c8df;
+      --red:      #f87171;
+      --amber:    #fbbf24;
+      --green:    #34d399;
+      --blue:     #60a5fa;
+      --purple:   #a78bfa;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Dot grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(56,189,248,0.06) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Top glow */
+    .bg-glow {
+      position: fixed;
+      top: -300px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 500px;
+      background: radial-gradient(ellipse, rgba(14,165,233,0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── HEADER ─── */
+    header {
+      position: sticky; top: 0; z-index: 200;
+      height: 58px;
+      background: rgba(7,11,15,0.88);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 11px;
+    }
+    .logo-gem {
+      width: 30px; height: 30px;
+      background: linear-gradient(135deg, var(--accent3) 0%, var(--accent) 100%);
+      border-radius: 8px;
+      display: grid; place-items: center;
+      font-size: 15px;
+      box-shadow: 0 0 18px rgba(56,189,248,0.35);
+    }
+    .logo-text {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.05rem;
+      color: var(--text);
+      letter-spacing: 0.01em;
+    }
+    .logo-text b { color: var(--accent); font-weight: 400; font-style: italic; }
+    .header-pills {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .pill {
+      font-size: 11px;
+      border-radius: 20px;
+      padding: 3px 10px;
+      border: 1px solid;
+    }
+    .pill-green {
+      background: rgba(52,211,153,0.08);
+      border-color: rgba(52,211,153,0.25);
+      color: var(--green);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .pill-dot {
+      width: 6px; height: 6px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: blink 2s infinite;
+      box-shadow: 0 0 6px var(--green);
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .pill-blue {
+      background: rgba(56,189,248,0.08);
+      border-color: rgba(56,189,248,0.22);
+      color: var(--accent);
+    }
+
+    /* ─── DISCLAIMER ─── */
+    .disclaimer {
+      position: relative; z-index: 1;
+      background: rgba(251,191,36,0.07);
+      border-bottom: 1px solid rgba(251,191,36,0.14);
+      padding: 9px 2rem;
+      font-size: 11.5px;
+      color: #c9922a;
+      text-align: center;
+      letter-spacing: 0.01em;
+    }
+
+    /* ─── HERO ─── */
+    .hero {
+      position: relative; z-index: 1;
+      text-align: center;
+      padding: 3.5rem 1.5rem 1.5rem;
+    }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: rgba(56,189,248,0.07);
+      border: 1px solid rgba(56,189,248,0.18);
+      border-radius: 30px;
+      padding: 4px 14px;
+      font-size: 11px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.1rem;
+    }
+    .hero h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(1.9rem, 5vw, 3.1rem);
+      line-height: 1.12;
+      font-weight: 600;
+      margin-bottom: 0.8rem;
+    }
+    .hero h1 em { font-style: italic; color: var(--accent); }
+    .hero-sub {
+      font-size: 14px; color: var(--text2);
+      max-width: 480px; margin: 0 auto 2rem;
+      line-height: 1.7;
+    }
+
+    /* API endpoint pills */
+    .endpoint-strip {
+      display: flex; justify-content: center;
+      flex-wrap: wrap; gap: 8px;
+      margin-bottom: 2.5rem;
+    }
+    .ep {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--s2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 12px;
+      color: var(--text2);
+      font-family: monospace;
+    }
+    .ep-method {
+      font-size: 10px; font-weight: 700;
+      padding: 1px 5px; border-radius: 4px;
+      font-family: 'Syne', sans-serif;
+    }
+    .ep-post { background: rgba(52,211,153,0.12); color: var(--green); }
+    .ep-get  { background: rgba(96,165,250,0.12); color: var(--blue);  }
+
+    /* ─── MAIN GRID ─── */
+    .wrap {
+      position: relative; z-index: 1;
+      max-width: 1060px; margin: 0 auto;
+      padding: 0 1.5rem 5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.1rem;
+      align-items: start;
+    }
+    @media (max-width: 720px) { .wrap { grid-template-columns: 1fr; } }
+
+    /* ─── PANEL ─── */
+    .panel {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.4rem;
+      transition: border-color 0.2s;
+      animation: up 0.45s ease both;
+    }
+    .panel:hover { border-color: var(--border2); }
+    @keyframes up { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+    .panel:nth-child(2) { animation-delay: 0.06s; }
+    .panel:nth-child(3) { animation-delay: 0.12s; }
+
+    .ph {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 1.1rem;
+    }
+    .ph-icon {
+      width: 32px; height: 32px;
+      background: var(--s3);
+      border: 1px solid var(--border2);
+      border-radius: 9px;
+      display: grid; place-items: center;
+      font-size: 15px; flex-shrink: 0;
+    }
+    .ph-title {
+      font-size: 11px; font-weight: 700;
+      color: var(--text2);
+      text-transform: uppercase; letter-spacing: 0.09em;
+    }
+    .ph-sub { font-size: 11px; color: var(--text2); opacity: 0.6; margin-top: 2px; }
+
+    /* ─── ENV KEY STRIP ─── */
+    .key-strip {
+      grid-column: 1 / -1;
+      background: rgba(56,189,248,0.04);
+      border: 1px solid rgba(56,189,248,0.14);
+      border-radius: 14px;
+      padding: 1rem 1.25rem;
+      display: flex; flex-wrap: wrap;
+      align-items: center; gap: 12px;
+    }
+    .key-strip-label {
+      font-size: 11px; font-weight: 700;
+      color: var(--accent); text-transform: uppercase;
+      letter-spacing: 0.08em; white-space: nowrap;
+    }
+    .key-strip input {
+      flex: 1; min-width: 200px;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 8px 13px;
+      color: var(--text);
+      font-family: monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .key-strip input:focus { border-color: var(--accent); }
+    .key-strip input::placeholder { color: var(--text2); font-size: 12px; }
+    .key-note { font-size: 11px; color: var(--text2); }
+    .key-note a { color: var(--accent); text-decoration: none; }
+
+    /* ─── UPLOAD ─── */
+    .dropzone {
+      border: 2px dashed var(--border2);
+      border-radius: 12px;
+      min-height: 175px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 9px;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      background: var(--s2);
+      transition: all 0.2s;
+      padding: 1.25rem;
+    }
+    .dropzone:hover, .dropzone.over {
+      border-color: var(--accent);
+      background: rgba(56,189,248,0.04);
+      box-shadow: 0 0 30px rgba(56,189,248,0.07);
+    }
+    .dropzone input { position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%; }
+    .dz-icon { font-size: 2rem; pointer-events: none; }
+    .dz-title { font-size: 13px; color: var(--text3); pointer-events: none; font-weight: 500; }
+    .dz-hint  { font-size: 11px; color: var(--text2); pointer-events: none; }
+    .dz-chips { display:flex;gap:5px;flex-wrap:wrap;justify-content:center;pointer-events:none; }
+    .dz-chip  {
+      background: var(--s3); border: 1px solid var(--border);
+      border-radius: 5px; padding: 2px 7px; font-size: 10px; color: var(--text2);
+    }
+    .preview { display:none; flex-direction:column; align-items:center; gap:8px; width:100%; }
+    .preview.on { display:flex; }
+    .preview img { max-width:100%; max-height:175px; border-radius:9px; object-fit:contain; border:1px solid var(--border2); }
+    .preview-name { font-size:11px; color:var(--text2); }
+    .rm-btn {
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.2);
+      border-radius: 6px; padding:3px 11px;
+      font-size:11px; color:var(--red); cursor:pointer;
+      font-family:'Syne',sans-serif;
+    }
+    .dz-placeholder { pointer-events:none; display:flex;flex-direction:column;align-items:center;gap:9px; }
+
+    .imgtype-grid {
+      display:none; grid-template-columns:1fr 1fr; gap:7px; margin-top:10px;
+    }
+    .imgtype-grid.on { display:grid; }
+    .itb {
+      background:var(--s2); border:1px solid var(--border);
+      border-radius:10px; padding:8px; cursor:pointer;
+      text-align:center; transition:all 0.15s;
+      font-family:'Syne',sans-serif;
+    }
+    .itb:hover { border-color:var(--border2); }
+    .itb.on { background:rgba(56,189,248,0.07); border-color:var(--accent); }
+    .itb .ie { font-size:1.2rem; display:block; margin-bottom:3px; }
+    .itb .il { font-size:10px; color:var(--text2); }
+    .itb.on .il { color:var(--accent); }
+
+    /* ─── FORM ELEMENTS ─── */
+    .frow { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-bottom:9px; }
+    .ff label {
+      display:block; font-size:10px; font-weight:700;
+      color:var(--text2); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;
+    }
+    select, input[type="number"] {
+      width:100%;
+      background:var(--s2); border:1px solid var(--border);
+      border-radius:8px; padding:8px 10px;
+      color:var(--text); font-family:'Syne',sans-serif;
+      font-size:13px; outline:none; transition:border-color 0.2s;
+      -webkit-appearance:none;
+    }
+    select:focus, input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(56,189,248,0.07); }
+    option { background:var(--s1); }
+
+    .sec-label {
+      font-size:10px; font-weight:700;
+      color:var(--text2); text-transform:uppercase;
+      letter-spacing:0.07em; margin-bottom:7px; margin-top:12px;
+      display:block;
+    }
+    .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+    .chip {
+      background:var(--s2); border:1px solid var(--border);
+      border-radius:20px; padding:4px 12px;
+      font-size:11px; cursor:pointer; color:var(--text2);
+      transition:all 0.15s; user-select:none;
+      font-family:'Syne',sans-serif;
+    }
+    .chip:hover { border-color:var(--border2); color:var(--text3); }
+    .chip.on { background:rgba(56,189,248,0.09); border-color:var(--accent); color:var(--accent); }
+
+    textarea {
+      width:100%;
+      background:var(--s2); border:1px solid var(--border);
+      border-radius:9px; padding:9px 12px;
+      color:var(--text); font-family:'Syne',sans-serif;
+      font-size:13px; resize:vertical; min-height:75px;
+      outline:none; line-height:1.6; transition:border-color 0.2s;
+    }
+    textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(56,189,248,0.07); }
+    textarea::placeholder { color:var(--text2); }
+
+    /* ─── ERROR ─── */
+    .errbox {
+      grid-column:1/-1;
+      background:rgba(248,113,113,0.08);
+      border:1px solid rgba(248,113,113,0.22);
+      border-radius:11px; padding:12px 15px;
+      color:var(--red); font-size:13px; display:none;
+      animation:up 0.3s ease;
+      line-height:1.6;
+    }
+    .errbox.on { display:block; }
+
+    /* ─── CTA BUTTON ─── */
+    .cta-wrap { grid-column:1/-1; }
+    .cta {
+      width:100%; padding:15px;
+      background: linear-gradient(120deg, var(--accent3) 0%, var(--accent2) 60%, var(--accent) 100%);
+      border:none; border-radius:13px;
+      color:#fff;
+      font-family:'Playfair Display',serif;
+      font-size:16px; font-weight:600; letter-spacing:0.03em;
+      cursor:pointer; transition:all 0.2s;
+      box-shadow: 0 0 40px rgba(56,189,248,0.18);
+      position:relative; overflow:hidden;
+    }
+    .cta::after {
+      content:''; position:absolute; inset:0;
+      background:linear-gradient(120deg,transparent,rgba(255,255,255,0.12),transparent);
+      transform:translateX(-100%); transition:transform 0.45s;
+    }
+    .cta:hover::after { transform:translateX(100%); }
+    .cta:hover { box-shadow:0 0 60px rgba(56,189,248,0.28); transform:translateY(-1px); }
+    .cta:active { transform:none; }
+    .cta:disabled { opacity:0.45; cursor:not-allowed; transform:none; box-shadow:none; }
+    .cta-inner { display:flex; align-items:center; justify-content:center; gap:10px; }
+    .spin {
+      width:17px; height:17px;
+      border:2px solid rgba(255,255,255,0.3);
+      border-top-color:#fff; border-radius:50%;
+      animation:rot 0.65s linear infinite; display:none;
+    }
+    .spin.on { display:block; }
+    @keyframes rot { to{transform:rotate(360deg)} }
+
+    /* ─── RESULTS ─── */
+    .results { grid-column:1/-1; display:none; animation:up 0.5s ease; }
+    .results.on { display:block; }
+
+    .res-card {
+      background:var(--s1);
+      border:1px solid var(--border2);
+      border-radius:16px; overflow:hidden;
+    }
+
+    .res-top {
+      background:var(--s2);
+      border-bottom:1px solid var(--border);
+      padding:1.4rem 1.5rem;
+      display:flex; align-items:center; gap:1.4rem;
+      flex-wrap:wrap;
+    }
+
+    .gauge {
+      width:84px; height:84px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      flex-direction:column; flex-shrink:0;
+      border:3px solid transparent; position:relative;
+    }
+    .gauge.low    { border-color:var(--green); box-shadow:0 0 22px rgba(52,211,153,0.28); }
+    .gauge.medium { border-color:var(--amber); box-shadow:0 0 22px rgba(251,191,36,0.28); }
+    .gauge.high   { border-color:var(--red);   box-shadow:0 0 22px rgba(248,113,113,0.28); }
+    .g-score {
+      font-family:'Playfair Display',serif;
+      font-size:1.65rem; font-weight:600;
+    }
+    .g-score.low { color:var(--green); } .g-score.medium { color:var(--amber); } .g-score.high { color:var(--red); }
+    .g-label { font-size:9px; text-transform:uppercase; letter-spacing:0.1em; }
+    .g-label.low { color:var(--green); } .g-label.medium { color:var(--amber); } .g-label.high { color:var(--red); }
+
+    .res-title-area h2 {
+      font-family:'Playfair Display',serif;
+      font-size:1.15rem; font-weight:600;
+      color:var(--text); margin-bottom:5px;
+    }
+    .res-title-area p { font-size:13px; color:var(--text2); line-height:1.6; }
+
+    .res-body { padding:1.4rem 1.5rem; }
+
+    .sec { margin-bottom:1.4rem; }
+    .sec:last-child { margin-bottom:0; }
+    .stitle {
+      font-size:10px; font-weight:700;
+      text-transform:uppercase; letter-spacing:0.09em;
+      color:var(--text2); margin-bottom:0.7rem;
+      display:flex; align-items:center; gap:8px;
+    }
+    .stitle::after { content:''; flex:1; height:1px; background:var(--border); }
+
+    .urgency-row { display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+    .ubadge {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 14px; border-radius:20px;
+      font-size:12px; font-weight:600; flex-shrink:0;
+      border:1px solid;
+    }
+    .ubadge.emergency { background:rgba(248,113,113,0.09); color:var(--red);   border-color:rgba(248,113,113,0.28); }
+    .ubadge.soon      { background:rgba(251,191,36,0.09);  color:var(--amber); border-color:rgba(251,191,36,0.28);  }
+    .ubadge.routine   { background:rgba(52,211,153,0.09);  color:var(--green); border-color:rgba(52,211,153,0.28);  }
+    .ubadge.monitor   { background:rgba(96,165,250,0.09);  color:var(--blue);  border-color:rgba(96,165,250,0.28);  }
+    .urgency-text { font-size:13px; color:var(--text2); line-height:1.6; }
+
+    .findings { display:flex; flex-direction:column; gap:7px; }
+    .fi {
+      background:var(--s2); border:1px solid var(--border);
+      border-radius:9px; padding:9px 13px;
+      display:flex; align-items:flex-start; gap:9px;
+      font-size:13px; color:var(--text3); line-height:1.55;
+    }
+    .fi-dot { width:8px; height:8px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+    .fi.critical { border-left:3px solid var(--red); }
+    .fi.moderate { border-left:3px solid var(--amber); }
+    .fi.normal   { border-left:3px solid var(--green); }
+    .fi.critical .fi-dot { background:var(--red); }
+    .fi.moderate .fi-dot { background:var(--amber); }
+    .fi.normal   .fi-dot { background:var(--green); }
+
+    .recos { display:flex; flex-direction:column; gap:7px; }
+    .reco {
+      background:var(--s2); border:1px solid var(--border);
+      border-radius:9px; padding:9px 13px;
+      font-size:13px; color:var(--text3); line-height:1.55;
+    }
+    .reco b { color:var(--accent); font-weight:600; }
+
+    .differentials {
+      display:flex; flex-wrap:wrap; gap:7px;
+    }
+    .diff-chip {
+      background:rgba(167,139,250,0.09);
+      border:1px solid rgba(167,139,250,0.22);
+      border-radius:20px; padding:4px 12px;
+      font-size:12px; color:var(--purple);
+    }
+
+    .redflags { display:flex; flex-direction:column; gap:6px; }
+    .redflag {
+      background:rgba(248,113,113,0.05);
+      border:1px solid rgba(248,113,113,0.15);
+      border-radius:9px; padding:7px 12px;
+      font-size:12px; color:var(--red);
+      display:flex; gap:8px; align-items:flex-start;
+    }
+
+    .model-meta {
+      margin-top:1.1rem;
+      background:rgba(56,189,248,0.04);
+      border:1px solid var(--border);
+      border-radius:9px; padding:9px 13px;
+      font-size:11px; color:var(--text2);
+      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    }
+    .model-tag {
+      background:var(--s3); border:1px solid var(--border2);
+      border-radius:5px; padding:2px 8px;
+      font-size:10px; color:var(--accent); font-family:monospace;
+    }
+
+    .footer-warn {
+      margin-top:1rem;
+      background:rgba(251,191,36,0.05);
+      border:1px solid rgba(251,191,36,0.11);
+      border-radius:9px; padding:9px 13px;
+      font-size:11.5px; color:#b5882a; line-height:1.65;
+    }
+
+    /* ─── API DOCS SECTION ─── */
+    .api-docs {
+      position:relative; z-index:1;
+      max-width:1060px; margin:0 auto;
+      padding:0 1.5rem 4rem;
+    }
+    .docs-title {
+      font-family:'Playfair Display',serif;
+      font-size:1.5rem; font-weight:600;
+      margin-bottom:0.5rem;
+    }
+    .docs-sub { font-size:13px; color:var(--text2); margin-bottom:1.5rem; }
+    .docs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:1rem; }
+    .doc-card {
+      background:var(--s1); border:1px solid var(--border);
+      border-radius:14px; padding:1.25rem;
+      animation:up 0.5s ease;
+    }
+    .doc-ep {
+      display:flex; align-items:center; gap:8px; margin-bottom:0.9rem;
+    }
+    .doc-method {
+      font-size:10px; font-weight:700;
+      padding:2px 7px; border-radius:4px;
+      font-family:'Syne',sans-serif;
+    }
+    .m-post { background:rgba(52,211,153,0.12); color:var(--green); }
+    .m-get  { background:rgba(96,165,250,0.12); color:var(--blue); }
+    .doc-path { font-family:monospace; font-size:13px; color:var(--accent); }
+    .doc-desc { font-size:12px; color:var(--text2); margin-bottom:0.9rem; line-height:1.6; }
+    .doc-code {
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:8px; padding:12px;
+      font-family:monospace; font-size:11px; color:var(--text3);
+      overflow-x:auto; white-space:pre; line-height:1.7;
+    }
+    .doc-code .k { color:var(--blue); }
+    .doc-code .s { color:var(--green); }
+    .doc-code .n { color:var(--amber); }
+    .doc-code .c { color:var(--text2); }
+
+    footer {
+      position:relative; z-index:1;
+      text-align:center; padding:2rem;
+      font-size:11px; color:var(--text2);
+      border-top:1px solid var(--border);
+    }
+    footer a { color:var(--accent); text-decoration:none; }
+  </style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+
+<header>
+  <div class="logo">
+    <div class="logo-gem">🧬</div>
+    <div class="logo-text">Med<b>Gemma</b> Assess</div>
+  </div>
+  <div class="header-pills">
+    <div class="pill pill-green"><div class="pill-dot"></div> API Live</div>
+    <div class="pill pill-blue">Vercel Serverless</div>
+  </div>
+</header>
+
+<div class="disclaimer">
+  ⚠️ For informational purposes only — not a substitute for professional medical advice, diagnosis, or treatment. Always consult a qualified healthcare provider.
+</div>
+
+<div class="hero">
+  <div class="eyebrow">🔬 Powered by Google MedGemma</div>
+  <h1>Medical <em>Risk Assessment</em><br/>via Secure API</h1>
+  <p class="hero-sub">Upload a medical image and describe symptoms. MedGemma's medically-trained model analyzes risk through a secure Vercel serverless endpoint — your API key never touches the browser.</p>
+  <div class="endpoint-strip">
+    <div class="ep"><span class="ep-method ep-post">POST</span>/api/assess</div>
+    <div class="ep"><span class="ep-method ep-get">GET</span>/api/health</div>
+    <div class="ep"><span class="ep-method ep-get">GET</span>/api/models</div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ENV key notice (only shown if HF_API_KEY not set) -->
+  <div class="key-strip" id="keyStrip">
+    <div class="key-strip-label">HuggingFace Key</div>
+    <input type="password" id="apiKey" placeholder="hf_xxxxxxxxxxxx  (or set HF_API_KEY in Vercel env vars)"/>
+    <div class="key-note">
+      Get free key → <a href="https://huggingface.co/settings/tokens" target="_blank">huggingface.co/settings/tokens</a>
+      &nbsp;·&nbsp; Accept model: <a href="https://huggingface.co/google/medgemma-4b-it" target="_blank">medgemma-4b-it</a>
+    </div>
+  </div>
+
+  <!-- Image Upload -->
+  <div class="panel">
+    <div class="ph">
+      <div class="ph-icon">🩻</div>
+      <div><div class="ph-title">Medical Image</div><div class="ph-sub">Optional — enables vision model</div></div>
+    </div>
+
+    <div class="dropzone" id="dz">
+      <input type="file" id="fileIn" accept="image/*"/>
+      <div class="dz-placeholder" id="dzPlaceholder">
+        <div class="dz-icon">📁</div>
+        <div class="dz-title">Drop image or click to upload</div>
+        <div class="dz-hint">Switches to MedGemma-4B multimodal</div>
+        <div class="dz-chips">
+          <span class="dz-chip">X-ray</span>
+          <span class="dz-chip">Skin</span>
+          <span class="dz-chip">Wound</span>
+          <span class="dz-chip">Eye</span>
+        </div>
+      </div>
+      <div class="preview" id="prev">
+        <img id="prevImg" src="" alt="Preview"/>
+        <div class="preview-name" id="prevName"></div>
+        <button class="rm-btn" onclick="rmImg(event)">✕ Remove</button>
+      </div>
+    </div>
+
+    <div class="imgtype-grid" id="itGrid">
+      <button class="itb on" data-t="xray"  onclick="pickType(this)"><span class="ie">🩻</span><span class="il">X-ray / Scan</span></button>
+      <button class="itb"    data-t="skin"  onclick="pickType(this)"><span class="ie">🔬</span><span class="il">Skin Condition</span></button>
+      <button class="itb"    data-t="wound" onclick="pickType(this)"><span class="ie">🩹</span><span class="il">Wound / Injury</span></button>
+      <button class="itb"    data-t="eye"   onclick="pickType(this)"><span class="ie">👁️</span><span class="il">Eye / Retina</span></button>
+    </div>
+  </div>
+
+  <!-- Symptoms + Patient -->
+  <div class="panel">
+    <div class="ph">
+      <div class="ph-icon">👤</div>
+      <div><div class="ph-title">Patient & Symptoms</div><div class="ph-sub">Clinical context for assessment</div></div>
+    </div>
+
+    <div class="frow">
+      <div class="ff"><label>Age</label><input type="number" id="age" placeholder="35" min="0" max="120"/></div>
+      <div class="ff"><label>Biological Sex</label>
+        <select id="sex">
+          <option value="">Select</option>
+          <option>Male</option><option>Female</option><option>Prefer not to say</option>
+        </select>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="ff"><label>Medical History</label>
+        <select id="hist">
+          <option value="">None significant</option>
+          <option>Diabetes</option><option>Hypertension</option>
+          <option>Heart disease</option><option>Asthma / COPD</option>
+          <option>Cancer (history)</option><option>Autoimmune disorder</option><option>Other</option>
+        </select>
+      </div>
+      <div class="ff"><label>Smoking Status</label>
+        <select id="smoke">
+          <option value="">Unknown</option>
+          <option>Non-smoker</option><option>Former smoker</option><option>Current smoker</option>
+        </select>
+      </div>
+    </div>
+
+    <span class="sec-label">Symptoms (select all that apply)</span>
+    <div class="chips" id="chipBox">
+      <span class="chip" onclick="tog(this)">Fever</span>
+      <span class="chip" onclick="tog(this)">Chest pain</span>
+      <span class="chip" onclick="tog(this)">Shortness of breath</span>
+      <span class="chip" onclick="tog(this)">Cough</span>
+      <span class="chip" onclick="tog(this)">Fatigue</span>
+      <span class="chip" onclick="tog(this)">Headache</span>
+      <span class="chip" onclick="tog(this)">Nausea</span>
+      <span class="chip" onclick="tog(this)">Dizziness</span>
+      <span class="chip" onclick="tog(this)">Swelling</span>
+      <span class="chip" onclick="tog(this)">Skin rash</span>
+      <span class="chip" onclick="tog(this)">Vision changes</span>
+      <span class="chip" onclick="tog(this)">Pain</span>
+    </div>
+
+    <span class="sec-label">Additional Details</span>
+    <textarea id="notes" placeholder="Onset, severity (1–10), location, any other relevant info..."></textarea>
+
+    <div class="frow" style="margin-top:9px;margin-bottom:0;">
+      <div class="ff"><label>Duration</label>
+        <select id="dur">
+          <option value="">Not specified</option>
+          <option>Under 24 hours</option><option>1–3 days</option><option>3–7 days</option>
+          <option>1–2 weeks</option><option>2–4 weeks</option><option>1–3 months</option>
+          <option>Over 3 months</option>
+        </select>
+      </div>
+      <div class="ff"><label>Pain Level</label>
+        <select id="pain">
+          <option value="">Not applicable</option>
+          <option>1–3 (Mild)</option><option>4–6 (Moderate)</option>
+          <option>7–9 (Severe)</option><option>10 (Unbearable)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="errbox" id="errBox"></div>
+
+  <div class="cta-wrap">
+    <button class="cta" id="ctaBtn" onclick="runAssess()">
+      <div class="cta-inner">
+        <div class="spin" id="spin"></div>
+        <span id="ctaTxt">🧬 Analyze with MedGemma</span>
+      </div>
+    </button>
+  </div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+    <div class="res-card">
+      <div class="res-top">
+        <div class="gauge" id="gauge">
+          <div class="g-score" id="gScore">—</div>
+          <div class="g-label" id="gLabel">Risk</div>
+        </div>
+        <div class="res-title-area">
+          <h2 id="resTitle">Assessment</h2>
+          <p id="resSummary"></p>
+        </div>
+      </div>
+      <div class="res-body">
+        <div class="sec">
+          <div class="stitle">Recommended Action</div>
+          <div class="urgency-row">
+            <div id="uBadge"></div>
+            <div class="urgency-text" id="uText"></div>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="stitle">Key Findings</div>
+          <div class="findings" id="findings"></div>
+        </div>
+        <div class="sec">
+          <div class="stitle">Recommendations</div>
+          <div class="recos" id="recos"></div>
+        </div>
+        <div class="sec" id="diffSec" style="display:none;">
+          <div class="stitle">Possible Differentials</div>
+          <div class="differentials" id="diffs"></div>
+        </div>
+        <div class="sec" id="rfSec" style="display:none;">
+          <div class="stitle">Red Flags to Watch</div>
+          <div class="redflags" id="rfs"></div>
+        </div>
+        <div class="model-meta">
+          <span>Analyzed by</span>
+          <span class="model-tag" id="modelTag">—</span>
+          <span>via /api/assess</span>
+        </div>
+        <div class="footer-warn">
+          ⚕️ This AI assessment is generated for <strong>informational purposes only</strong>. It does not constitute a medical diagnosis. Please consult a licensed healthcare professional.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- API Docs -->
+<div class="api-docs">
+  <div class="docs-title">API Reference</div>
+  <div class="docs-sub">Three serverless endpoints — ready to integrate into any app.</div>
+  <div class="docs-grid">
+
+    <div class="doc-card">
+      <div class="doc-ep">
+        <span class="doc-method m-post">POST</span>
+        <span class="doc-path">/api/assess</span>
+      </div>
+      <div class="doc-desc">Run a full medical risk assessment. Accepts patient info, symptoms, and optionally a base64-encoded medical image. Automatically selects MedGemma-4B (multimodal) when image is provided.</div>
+      <div class="doc-code"><span class="c">// Example request</span>
+<span class="k">fetch</span>(<span class="s">'/api/assess'</span>, {
+  method: <span class="s">'POST'</span>,
+  headers: { <span class="s">'Content-Type'</span>: <span class="s">'application/json'</span> },
+  body: <span class="k">JSON.stringify</span>({
+    age: <span class="n">45</span>,
+    sex: <span class="s">'Male'</span>,
+    symptoms: <span class="s">'Chest pain, Shortness of breath'</span>,
+    duration: <span class="s">'1–3 days'</span>,
+    notes: <span class="s">'Sharp pain radiating to left arm'</span>,
+    image: <span class="s">'&lt;base64 string&gt;'</span>,  <span class="c">// optional</span>
+    imageType: <span class="s">'xray'</span>
+  })
+})</div>
+    </div>
+
+    <div class="doc-card">
+      <div class="doc-ep">
+        <span class="doc-method m-get">GET</span>
+        <span class="doc-path">/api/health</span>
+      </div>
+      <div class="doc-desc">Health check endpoint. Returns API status, configured model names, available endpoints, and whether the HF_API_KEY environment variable is set.</div>
+      <div class="doc-code"><span class="c">// Example response</span>
+{
+  <span class="s">"status"</span>: <span class="s">"ok"</span>,
+  <span class="s">"service"</span>: <span class="s">"MedGemma Risk Assessment API"</span>,
+  <span class="s">"apiKeyConfigured"</span>: <span class="k">true</span>,
+  <span class="s">"models"</span>: {
+    <span class="s">"textOnly"</span>: <span class="s">"google/medgemma-2b-it"</span>,
+    <span class="s">"multimodal"</span>: <span class="s">"google/medgemma-4b-it"</span>
+  }
+}</div>
+    </div>
+
+    <div class="doc-card">
+      <div class="doc-ep">
+        <span class="doc-method m-get">GET</span>
+        <span class="doc-path">/api/models</span>
+      </div>
+      <div class="doc-desc">Lists available MedGemma models with capabilities, context window size, supported image types, and auto-selection logic.</div>
+      <div class="doc-code"><span class="c">// Example response</span>
+{
+  <span class="s">"models"</span>: [
+    {
+      <span class="s">"id"</span>: <span class="s">"google/medgemma-2b-it"</span>,
+      <span class="s">"type"</span>: <span class="s">"text-only"</span>,
+      <span class="s">"free"</span>: <span class="k">true</span>
+    },
+    {
+      <span class="s">"id"</span>: <span class="s">"google/medgemma-4b-it"</span>,
+      <span class="s">"type"</span>: <span class="s">"vision + text"</span>,
+      <span class="s">"free"</span>: <span class="k">true</span>
+    }
+  ]
+}</div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  MedGemma Assess — Serverless API on <strong>Vercel</strong> · Model: <a href="https://huggingface.co/google/medgemma-4b-it" target="_blank">google/medgemma-4b-it</a> · <a href="https://huggingface.co/google/medgemma-2b-it" target="_blank">google/medgemma-2b-it</a>
+</footer>
+
+<script>
+  let imgB64 = null, imgMime = 'image/jpeg', imgType = 'xray';
+
+  // Drag & drop
+  const dz = document.getElementById('dz');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) loadImg(f); });
+  document.getElementById('fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadImg(f); });
+
+  function loadImg(f) {
+    imgMime = f.type;
+    const r = new FileReader();
+    r.onload = ev => {
+      imgB64 = ev.target.result.split(',')[1];
+      document.getElementById('prevImg').src = ev.target.result;
+      document.getElementById('prevName').textContent = f.name;
+      document.getElementById('dzPlaceholder').style.display = 'none';
+      document.getElementById('prev').classList.add('on');
+      document.getElementById('itGrid').classList.add('on');
+    };
+    r.readAsDataURL(f);
+  }
+
+  function rmImg(e) {
+    e.preventDefault(); e.stopPropagation();
+    imgB64 = null;
+    document.getElementById('prev').classList.remove('on');
+    document.getElementById('dzPlaceholder').style.display = '';
+    document.getElementById('itGrid').classList.remove('on');
+    document.getElementById('fileIn').value = '';
+  }
+
+  function pickType(btn) {
+    document.querySelectorAll('.itb').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    imgType = btn.dataset.t;
+  }
+
+  function tog(chip) { chip.classList.toggle('on'); }
+
+  async function runAssess() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const age    = document.getElementById('age').value;
+    const sex    = document.getElementById('sex').value;
+    const hist   = document.getElementById('hist').value;
+    const smoke  = document.getElementById('smoke').value;
+    const dur    = document.getElementById('dur').value;
+    const pain   = document.getElementById('pain').value;
+    const notes  = document.getElementById('notes').value;
+    const syms   = [...document.querySelectorAll('.chip.on')].map(c => c.textContent).join(', ');
+
+    if (!syms && !notes && !age && !imgB64) {
+      return showErr('Please provide at least one symptom, patient detail, or image.');
+    }
+
+    setBusy(true); hideErr(); document.getElementById('results').classList.remove('on');
+
+    const payload = {
+      age, sex, history: hist, smoking: smoke,
+      symptoms: syms + (pain ? `; Pain level: ${pain}` : ''),
+      duration: dur, notes,
+      imageType: imgType,
+    };
+    if (imgB64) { payload.image = imgB64; payload.imageMime = imgMime; }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    try {
+      const res = await fetch('/api/assess', { method:'POST', headers, body: JSON.stringify(payload) });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+      }
+
+      render(data.assessment, data.model);
+    } catch (err) {
+      showErr('Assessment failed: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function render(r, model) {
+    const lvl = (r.riskLevel || 'MEDIUM').toLowerCase();
+    const g = document.getElementById('gauge');
+    const gs = document.getElementById('gScore');
+    const gl = document.getElementById('gLabel');
+    g.className = `gauge ${lvl}`;
+    gs.className = `g-score ${lvl}`;
+    gl.className = `g-label ${lvl}`;
+    gs.textContent = (r.riskScore || '—') + '%';
+    gl.textContent = r.riskLevel || 'MEDIUM';
+
+    document.getElementById('resTitle').textContent   = r.title || 'Assessment Complete';
+    document.getElementById('resSummary').textContent = r.summary || '';
+
+    const urgMap = {
+      EMERGENCY: { cls:'emergency', icon:'🚨', txt:'Seek Emergency Care Now' },
+      SOON:      { cls:'soon',      icon:'⚠️',  txt:'See a Doctor Soon (24–48 hrs)' },
+      ROUTINE:   { cls:'routine',   icon:'✅',  txt:'Schedule Routine Appointment' },
+      MONITOR:   { cls:'monitor',   icon:'👁️',  txt:'Monitor & Self-Care' },
+    };
+    const u = urgMap[r.urgency] || urgMap['MONITOR'];
+    document.getElementById('uBadge').innerHTML = `<div class="ubadge ${u.cls}">${u.icon} ${u.txt}</div>`;
+    document.getElementById('uText').textContent = r.urgencyText || '';
+
+    document.getElementById('findings').innerHTML = (r.findings || []).map(f =>
+      `<div class="fi ${f.severity || 'normal'}"><div class="fi-dot"></div><div>${f.text}</div></div>`
+    ).join('') || '<div class="fi normal"><div class="fi-dot"></div><div>No specific findings.</div></div>';
+
+    document.getElementById('recos').innerHTML = (r.recommendations || []).map((rc, i) =>
+      `<div class="reco"><b>${i+1}.</b> ${rc.text}</div>`
+    ).join('');
+
+    const diffs = r.differentials || [];
+    const ds = document.getElementById('diffSec');
+    if (diffs.length) {
+      ds.style.display = '';
+      document.getElementById('diffs').innerHTML = diffs.map(d => `<span class="diff-chip">${d}</span>`).join('');
+    } else ds.style.display = 'none';
+
+    const rfs = r.redFlags || [];
+    const rs = document.getElementById('rfSec');
+    if (rfs.length) {
+      rs.style.display = '';
+      document.getElementById('rfs').innerHTML = rfs.map(f => `<div class="redflag">⚑ ${f}</div>`).join('');
+    } else rs.style.display = 'none';
+
+    document.getElementById('modelTag').textContent = model || 'MedGemma';
+
+    const wrap = document.getElementById('results');
+    wrap.classList.add('on');
+    wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+
+  function setBusy(on) {
+    document.getElementById('ctaBtn').disabled = on;
+    document.getElementById('spin').classList.toggle('on', on);
+    document.getElementById('ctaTxt').textContent = on ? 'Analyzing with MedGemma...' : '🧬 Analyze with MedGemma';
+  }
+  function showErr(m) { const b = document.getElementById('errBox'); b.textContent = '⚠️ '+m; b.classList.add('on'); b.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+  function hideErr() { document.getElementById('errBox').classList.remove('on'); }
+</script>
+</body>
+</html>
