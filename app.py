@@ -1,120 +1,76 @@
 import os
 import time
-import json
-import base64
-import requests
+import httpx  # Better for async than 'requests'
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from fastapi.middleware.cors import CORSMiddleware
 
-# ======================
-# CONFIG & CLIENT
-# ======================
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 HF_TOKEN = os.getenv("HF_TOKEN")
-HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
+API_URL = "https://api-inference.huggingface.co/models/google/medgemma-1.1-7b-it"
+headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
-# Models
-NER_MODEL = "d4data/biomedical-ner-all"
-IMAGE_MODEL = "Salesforce/blip-image-captioning-base"
-LLM_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"
+class AssessmentRequest(BaseModel):
+    image_base64: str = None
+    symptoms: str
 
-app = FastAPI(title="Refined Medical AI")
-
-class InputData(BaseModel):
-    symptoms: Optional[str] = None
-    image_base64: Optional[str] = None
-
-# ======================
-# HELPER: ROBUST HF CALL
-# ======================
-def query_hf(model: str, payload: dict, is_binary: bool = False):
-    url = f"https://router.huggingface.co/models/{model}"
-    
-    # Retry logic for model "Loading" states (503 errors)
-    for _ in range(3):
-        try:
-            if is_binary:
-                response = requests.post(url, headers=HEADERS, data=payload, timeout=30)
-            else:
-                response = requests.post(url, headers=HEADERS, json=payload, timeout=30)
+async def call_huggingface(payload, retries=3, delay=20):
+    """
+    Logic to handle 503 (Loading) errors by waiting and retrying.
+    """
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for i in range(retries):
+            response = await client.post(API_URL, headers=headers, json=payload)
             
-            result = response.json()
+            if response.status_code == 200:
+                return response.json()
             
-            # Handle model warming up
+            # If model is loading, wait and try again
             if response.status_code == 503:
-                time.sleep(5)
+                print(f"Model loading... retry {i+1}/{retries}")
+                time.sleep(delay)
                 continue
-                
-            return result
-        except Exception as e:
-            return {"error": str(e)}
-    return {"error": "Model failed to load after retries"}
-
-# ======================
-# LOGIC LAYERS
-# ======================
-
-def extract_entities(text: str) -> List[str]:
-    """Extracts diseases/symptoms and cleans up the word fragments."""
-    results = query_hf(NER_MODEL, {"inputs": text, "parameters": {"aggregation_strategy": "simple"}})
-    
-    if not isinstance(results, list):
-        return []
+            
+            # If any other error occurs, raise it
+            raise HTTPException(status_code=response.status_code, detail=response.text)
         
-    # 'simple' aggregation merges ##fragments into whole words automatically
-    entities = [ent['word'] for ent in results if ent['entity_group'] in ['Disease', 'Sign_symptom']]
-    return list(set(entities))
+        raise HTTPException(status_code=504, detail="Model took too long to load. Please try again in a minute.")
 
-def describe_image(base64_str: str) -> str:
-    """Decodes image and gets caption."""
-    try:
-        image_bytes = base64.b64decode(base64_str)
-        result = query_hf(IMAGE_MODEL, image_bytes, is_binary=True)
-        return result[0].get("generated_text", "No visual features identified.") if isinstance(result, list) else ""
-    except:
-        return "Image processing failed."
+@app.post("/assess")
+async def risk_assessment(data: AssessmentRequest):
+    # 1. Input Validation: Basic check for empty symptoms
+    if not data.symptoms.strip():
+        raise HTTPException(status_code=400, detail="Symptoms text is required.")
 
-def get_medical_reasoning(symptoms: List[str], image_desc: str) -> Dict:
-    """Uses Mistral with a strict instruction format for JSON output."""
-    symptoms_str = ", ".join(symptoms) if symptoms else "None reported"
+    # 2. Build Payload
+    prompt = f"System: Medical Assistant. Analyze risks.\nSymptoms: {data.symptoms}"
     
-    # Mistral uses [INST] tags for instruction following
-    prompt = f"<s>[INST] You are a medical assistant. Based on these symptoms: {symptoms_str} and image description: {image_desc}, provide a risk assessment. Return ONLY a JSON object with keys: 'diseases' (list), 'risk' (Low/Medium/High), and 'remedies' (list of non-medicine advice). [/INST]</s>"
+    if data.image_base64 and len(data.image_base64) > 100:
+        # Multimodal request
+        payload = {
+            "inputs": {
+                "image": data.image_base64,
+                "text": f"{prompt}\nAnalyze the image provided."
+            }
+        }
+    else:
+        # Text-only request
+        payload = {
+            "inputs": prompt,
+            "parameters": {"max_new_tokens": 500, "return_full_text": False}
+        }
 
-    result = query_hf(LLM_MODEL, {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 200, "return_full_text": False}
-    })
+    # 3. Call HF with retry logic
+    return await call_huggingface(payload)
 
-    try:
-        # Mistral output is often a list of dicts
-        raw_text = result[0]['generated_text'] if isinstance(result, list) else str(result)
-        # Attempt to find the JSON part if the model added conversational filler
-        start_idx = raw_text.find('{')
-        end_idx = raw_text.rfind('}') + 1
-        return json.loads(raw_text[start_idx:end_idx])
-    except:
-        return {"error": "Could not parse AI response", "raw": result}
-
-# ======================
-# ENDPOINT
-# ======================
-@app.post("/analyze")
-async def analyze(data: InputData):
-    if not data.symptoms and not data.image_base64:
-        raise HTTPException(status_code=400, detail="Missing input data.")
-
-    # 1. Process Text
-    found_symptoms = extract_entities(data.symptoms) if data.symptoms else []
-    
-    # 2. Process Image
-    img_caption = describe_image(data.image_base64) if data.image_base64 else ""
-
-    # 3. Get LLM Reasoning
-    analysis = get_medical_reasoning(found_symptoms, img_caption)
-
-    return {
-        "symptoms_identified": found_symptoms,
-        "image_analysis": img_caption,
-        "medical_insight": analysis
-    }
+@app.get("/health")
+def health():
+    return {"status": "ok"}
