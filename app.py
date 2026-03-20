@@ -1,126 +1,80 @@
-from fastapi import FastAPI, UploadFile, File, Form
-import requests
-import base64
 import os
-from dotenv import load_dotenv
-from PIL import Image
 import io
+import httpx
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from dotenv import load_dotenv
 
 load_dotenv()
 
 app = FastAPI(title="Medical AI API")
 
 HF_TOKEN = os.getenv("HF_TOKEN")
-
 if not HF_TOKEN:
-    raise ValueError("HF_TOKEN not set")
+    raise ValueError("HF_TOKEN not set in .env file")
 
-headers = {
-    "Authorization": f"Bearer {HF_TOKEN}"
-}
+HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 
-# -----------------------------
-# API URLs
-# -----------------------------
+# Model Endpoints
 BIOBERT_API = "https://api-inference.huggingface.co/models/dmis-lab/biobert-base-cased-v1.1"
 BIOMEDCLIP_API = "https://api-inference.huggingface.co/models/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
-RADVLP_API = "https://api-inference.huggingface.co/models/microsoft/rad-vlp"
 
-# -----------------------------
-# UTIL
-# -----------------------------
-def image_to_base64(file_bytes):
-    return base64.b64encode(file_bytes).decode()
+async def query_hf_api(url, data=None, is_image=False):
+    async with httpx.AsyncClient() as client:
+        try:
+            if is_image:
+                # Images are sent as raw binary
+                response = await client.post(url, headers=HEADERS, content=data, timeout=30)
+            else:
+                # Text is sent as JSON
+                response = await client.post(url, headers=HEADERS, json={"inputs": data}, timeout=20)
+            
+            if response.status_code != 200:
+                return None
+            return response.json()
+        except Exception as e:
+            print(f"API Error: {e}")
+            return None
 
-# -----------------------------
-# TEXT
-# -----------------------------
-def query_text(text):
-    try:
-        res = requests.post(
-            BIOBERT_API,
-            headers=headers,
-            json={"inputs": text},
-            timeout=20
-        )
-        if res.status_code != 200:
-            return "Text API Error", 0.0
-        return "BioBERT Prediction", 0.6
-    except:
-        return "Text Failure", 0.0
-
-# -----------------------------
-# IMAGE
-# -----------------------------
-def query_image(file_bytes):
-    try:
-        img_b64 = image_to_base64(file_bytes)
-
-        res = requests.post(
-            BIOMEDCLIP_API,
-            headers=headers,
-            json={"inputs": img_b64},
-            timeout=25
-        )
-
-        if res.status_code != 200:
-            res = requests.post(
-                RADVLP_API,
-                headers=headers,
-                json={"inputs": img_b64},
-                timeout=25
-            )
-
-        return "Image Prediction", 0.65
-
-    except:
-        return "Image Failure", 0.0
-
-# -----------------------------
-# MAIN ENDPOINT
-# -----------------------------
 @app.post("/assess")
 async def assess(
-    symptoms: str = Form(""),
+    symptoms: str = Form(None),
     image: UploadFile = File(None)
 ):
-    has_txt = bool(symptoms.strip())
-    has_img = image is not None
+    if not symptoms and not image:
+        raise HTTPException(status_code=400, detail="Provide symptoms or an image.")
 
-    if not has_txt and not has_img:
-        return {"error": "Provide symptoms or image"}
+    results = {"text_res": None, "img_res": None}
+    
+    # Process Text
+    if symptoms:
+        results["text_res"] = await query_hf_api(BIOBERT_API, data=symptoms)
 
-    # read image
-    file_bytes = None
-    if has_img:
-        file_bytes = await image.read()
+    # Process Image
+    if image:
+        img_bytes = await image.read()
+        results["img_res"] = await query_hf_api(BIOMEDCLIP_API, data=img_bytes, is_image=True)
 
-    # logic
-    if has_txt and not has_img:
-        d, r = query_text(symptoms)
-        mode = "BioBERT API"
+    # Simplified Fusion Logic
+    # Note: BioBERT returns NER tags or embeddings; for a real 'diagnosis' 
+    # you'd typically use a classification head model.
+    prediction = "Inconclusive"
+    confidence = 0.0
 
-    elif has_img and not has_txt:
-        d, r = query_image(file_bytes)
-        mode = "BiomedCLIP API"
-
-    else:
-        d1, r1 = query_text(symptoms)
-        d2, r2 = query_image(file_bytes)
-
-        r = 0.6 * r1 + 0.4 * r2
-        d = d1 if r1 > r2 else d2
-        mode = "Multimodal Fusion"
+    if results["text_res"]:
+        prediction = "Text Analysis Complete"
+        confidence = 0.7  # Placeholder logic
+    
+    if results["img_res"]:
+        prediction = "Visual Analysis Complete"
+        confidence = 0.8
 
     return {
-        "disease": d,
-        "risk_score": round(r, 4),
-        "mode": mode
+        "status": "success",
+        "analysis": prediction,
+        "confidence": confidence,
+        "raw_responses": results
     }
 
-# -----------------------------
-# ROOT
-# -----------------------------
 @app.get("/")
 def root():
-    return {"message": "Medical AI API running 🚀"}
+    return {"message": "Medical AI API is active"}
