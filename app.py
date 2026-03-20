@@ -1,12 +1,14 @@
 import os
 import time
-import httpx  # Better for async than 'requests'
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
+# Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,63 +16,75 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configuration
 HF_TOKEN = os.getenv("HF_TOKEN")
-API_URL = "https://api-inference.huggingface.co/models/google/medgemma-1.1-7b-it"
+# Using the Hugging Face Router for better reliability
+API_URL = "https://router.huggingface.co/google/medgemma-1.1-7b-it"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 class AssessmentRequest(BaseModel):
-    image_base64: str = None
+    # Fixed: Added Optional and default None to prevent Pydantic string errors
+    image_base64: Optional[str] = None
     symptoms: str
 
-async def call_huggingface(payload, retries=3, delay=20):
+async def call_huggingface(payload, retries=3, delay=15):
     """
-    Logic to handle 503 (Loading) errors by waiting and retrying.
+    Handles the request to Hugging Face Router with a retry loop
+    for 503 (Loading) and 504 (Gateway) errors.
     """
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=90.0) as client:
         for i in range(retries):
-            response = await client.post(API_URL, headers=headers, json=payload)
+            try:
+                response = await client.post(API_URL, headers=headers, json=payload)
+                
+                # Success
+                if response.status_code == 200:
+                    return response.json()
+                
+                # Model is still loading on the HF side
+                if response.status_code in [503, 504]:
+                    print(f"Model busy or loading... attempt {i+1} of {retries}")
+                    time.sleep(delay)
+                    continue
+                
+                # Other API errors
+                raise HTTPException(status_code=response.status_code, detail=response.text)
             
-            if response.status_code == 200:
-                return response.json()
-            
-            # If model is loading, wait and try again
-            if response.status_code == 503:
-                print(f"Model loading... retry {i+1}/{retries}")
-                time.sleep(delay)
+            except httpx.ReadTimeout:
+                print("Request timed out, retrying...")
                 continue
-            
-            # If any other error occurs, raise it
-            raise HTTPException(status_code=response.status_code, detail=response.text)
         
-        raise HTTPException(status_code=504, detail="Model took too long to load. Please try again in a minute.")
+        raise HTTPException(status_code=504, detail="The AI model is currently unavailable or taking too long to respond.")
 
 @app.post("/assess")
 async def risk_assessment(data: AssessmentRequest):
-    # 1. Input Validation: Basic check for empty symptoms
-    if not data.symptoms.strip():
-        raise HTTPException(status_code=400, detail="Symptoms text is required.")
+    # Validation
+    if not data.symptoms or len(data.symptoms.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Please provide more detailed symptoms.")
 
-    # 2. Build Payload
-    prompt = f"System: Medical Assistant. Analyze risks.\nSymptoms: {data.symptoms}"
-    
+    # Construct Prompt
+    base_prompt = f"System: You are a medical diagnostic assistant. Analyze the symptoms and image (if provided) to assess health risks.\nSymptoms: {data.symptoms}"
+
+    # Multimodal vs Text-only Logic
     if data.image_base64 and len(data.image_base64) > 100:
-        # Multimodal request
+        # Clean the base64 string if it contains the data:image prefix
+        clean_base64 = data.image_base64.split(",")[-1] if "," in data.image_base64 else data.image_base64
+        
         payload = {
             "inputs": {
-                "image": data.image_base64,
-                "text": f"{prompt}\nAnalyze the image provided."
+                "image": clean_base64,
+                "text": f"{base_prompt}\nPlease identify visible abnormalities in the image related to these symptoms."
             }
         }
     else:
-        # Text-only request
+        # Fallback to Text-only
         payload = {
-            "inputs": prompt,
-            "parameters": {"max_new_tokens": 500, "return_full_text": False}
+            "inputs": f"{base_prompt}\nProvide a risk assessment based solely on these symptoms.",
+            "parameters": {"max_new_tokens": 500}
         }
 
-    # 3. Call HF with retry logic
     return await call_huggingface(payload)
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health_check():
+    return {"status": "online", "endpoint": "Hugging Face Router"}
