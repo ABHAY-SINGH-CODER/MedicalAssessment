@@ -21,9 +21,9 @@
 
 export const config = { maxDuration: 30 };
 
-const HF_API_BASE = 'https://router.huggingface.co/hf-inference/models';
-const TEXT_MODEL   = 'google/medgemma-2b-it';
-const VISION_MODEL = 'google/medgemma-4b-it';
+const HF_CHAT_URL  = 'https://router.huggingface.co/v1/chat/completions';
+const TEXT_MODEL   = 'google/medgemma-2b-it:hf-inference';
+const VISION_MODEL = 'google/medgemma-4b-it:hf-inference';
 
 const IMG_TYPE_LABELS = {
   xray:  'chest X-ray or radiological scan',
@@ -124,7 +124,7 @@ export default async function handler(req, res) {
   ];
 
   try {
-    const hfRes = await fetch(`${HF_API_BASE}/${modelId}/v1/chat/completions`, {
+    const hfRes = await fetch(HF_CHAT_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${hfApiKey}`,
