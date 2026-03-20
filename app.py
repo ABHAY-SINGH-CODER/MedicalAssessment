@@ -55,6 +55,11 @@ async def call_huggingface(payload, retries=3, delay=15):
                 continue
         
         raise HTTPException(status_code=504, detail="The AI model is currently unavailable or taking too long to respond.")
+    
+
+@app.get("/")
+async def root():
+    return {"message": "Medical Assessment API is running. Use /assess for POST requests."}
 
 @app.post("/assess")
 async def risk_assessment(data: AssessmentRequest):
