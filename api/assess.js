@@ -6,7 +6,7 @@
 export const config = { maxDuration: 30 };
 
 // ✅ FIX 1: Use the standard HF Inference API, not the router
-const HF_API_BASE  = 'https://api-inference.huggingface.co/models';
+const HF_API_BASE  = 'https://router.huggingface.co';
 
 // ✅ FIX 2: Both use medgemma-4b-it — the 2b model does NOT exist
 const TEXT_MODEL   = 'google/medgemma-4b-it';
