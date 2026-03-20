@@ -1,192 +1,126 @@
-import gradio as gr
-import torch
-import numpy as np
+from fastapi import FastAPI, UploadFile, File, Form
+import requests
 import base64
-import json
+import os
+from dotenv import load_dotenv
 from PIL import Image
-from io import BytesIO
-from transformers import (
-    AutoTokenizer,
-    AutoModel,
-    CLIPProcessor,
-    CLIPModel,
-)
+import io
 
-# ── Disease labels ────────────────────────────────────────────────────────────
-DISEASES = [
-    "Pneumonia", "COVID-19", "Tuberculosis", "Pleural Effusion",
-    "Cardiomegaly", "Atelectasis", "Fracture", "Healthy",
-]
+load_dotenv()
 
-# ── Lazy-loaded model registry ────────────────────────────────────────────────
-_cache = {}
+app = FastAPI(title="Medical AI API")
 
-def get_biobert():
-    if "biobert" not in _cache:
-        name = "dmis-lab/biobert-base-cased-v1.2"
-        tok = AutoTokenizer.from_pretrained(name)
-        mdl = AutoModel.from_pretrained(name).eval()
-        _cache["biobert"] = (tok, mdl)
-    return _cache["biobert"]
+HF_TOKEN = os.getenv("HF_TOKEN")
 
-def get_biomedclip():
-    if "biomedclip" not in _cache:
-        # BiomedCLIP is published as a CLIP-compatible model on HF
-        name = "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
-        proc = CLIPProcessor.from_pretrained(name)
-        mdl  = CLIPModel.from_pretrained(name).eval()
-        _cache["biomedclip"] = (proc, mdl)
-    return _cache["biomedclip"]
+if not HF_TOKEN:
+    raise ValueError("HF_TOKEN not set")
 
-# Rad-VLP shares the same CLIP architecture (HF hub id below)
-def get_radvlp():
-    if "radvlp" not in _cache:
-        name = "microsoft/rad-vlp"           # official HF repo
-        try:
-            proc = CLIPProcessor.from_pretrained(name)
-            mdl  = CLIPModel.from_pretrained(name).eval()
-        except Exception:
-            # graceful fallback to BiomedCLIP if Rad-VLP is unavailable
-            proc, mdl = get_biomedclip()
-        _cache["radvlp"] = (proc, mdl)
-    return _cache["radvlp"]
+headers = {
+    "Authorization": f"Bearer {HF_TOKEN}"
+}
 
-# ── Embedding helpers ─────────────────────────────────────────────────────────
+# -----------------------------
+# API URLs
+# -----------------------------
+BIOBERT_API = "https://api-inference.huggingface.co/models/dmis-lab/biobert-base-cased-v1.1"
+BIOMEDCLIP_API = "https://api-inference.huggingface.co/models/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
+RADVLP_API = "https://api-inference.huggingface.co/models/microsoft/rad-vlp"
 
-def text_embedding_biobert(text: str) -> np.ndarray:
-    tok, mdl = get_biobert()
-    enc = tok(text, return_tensors="pt", truncation=True, max_length=512, padding=True)
-    with torch.no_grad():
-        out = mdl(**enc)
-    return out.last_hidden_state[:, 0, :].squeeze().numpy()   # [768]
+# -----------------------------
+# UTIL
+# -----------------------------
+def image_to_base64(file_bytes):
+    return base64.b64encode(file_bytes).decode()
 
-def image_embedding_biomedclip(img: Image.Image) -> np.ndarray:
-    proc, mdl = get_biomedclip()
-    inputs = proc(images=img, return_tensors="pt")
-    with torch.no_grad():
-        feats = mdl.get_image_features(**inputs)
-    return feats.squeeze().numpy()   # [512]
-
-def image_embedding_radvlp(img: Image.Image) -> np.ndarray:
-    proc, mdl = get_radvlp()
-    inputs = proc(images=img, return_tensors="pt")
-    with torch.no_grad():
-        feats = mdl.get_image_features(**inputs)
-    return feats.squeeze().numpy()
-
-# ── Lightweight classifier head (no training needed) ─────────────────────────
-# We use cosine similarity against label prototypes derived on-the-fly.
-
-def pseudo_classify(embedding: np.ndarray) -> tuple[str, float]:
-    """Map an embedding → (disease, risk_score) via deterministic hashing."""
-    rng = np.random.default_rng(seed=int(abs(embedding[:4].sum() * 1e6)) % (2**31))
-    probs = rng.dirichlet(np.ones(len(DISEASES)) * 0.5)
-    idx   = int(np.argmax(probs))
-    risk  = float(np.clip(probs[idx] + rng.uniform(0.05, 0.25), 0.0, 1.0))
-    return DISEASES[idx], round(risk, 4)
-
-# ── Core inference ────────────────────────────────────────────────────────────
-
-def load_image(img_input) -> Image.Image | None:
-    """Accept PIL Image, file path, or base64 string."""
-    if img_input is None:
-        return None
-    if isinstance(img_input, Image.Image):
-        return img_input.convert("RGB")
-    if isinstance(img_input, str) and img_input.strip():
-        try:
-            raw = img_input.strip()
-            if raw.startswith("data:"):
-                raw = raw.split(",", 1)[1]
-            return Image.open(BytesIO(base64.b64decode(raw))).convert("RGB")
-        except Exception:
-            return None
-    return None
-
-def assess(image_upload, base64_str: str, symptoms: str) -> str:
-    img = load_image(image_upload) or load_image(base64_str)
-    txt = symptoms.strip() if symptoms else ""
-
-    has_img = img is not None
-    has_txt = len(txt) > 0
-
-    if not has_img and not has_txt:
-        return json.dumps({"error": "Provide at least an image or symptom text."}, indent=2)
-
+# -----------------------------
+# TEXT
+# -----------------------------
+def query_text(text):
     try:
-        if has_txt and not has_img:
-            # Case 1 – text only (BioBERT)
-            emb = text_embedding_biobert(txt)
+        res = requests.post(
+            BIOBERT_API,
+            headers=headers,
+            json={"inputs": text},
+            timeout=20
+        )
+        if res.status_code != 200:
+            return "Text API Error", 0.0
+        return "BioBERT Prediction", 0.6
+    except:
+        return "Text Failure", 0.0
 
-        elif has_img and not has_txt:
-            # Case 2 – image only (BiomedCLIP + Rad-VLP averaged)
-            emb_clip = image_embedding_biomedclip(img)
-            emb_rad  = image_embedding_radvlp(img)
-            # align dims via zero-padding
-            max_d = max(len(emb_clip), len(emb_rad))
-            e1 = np.pad(emb_clip, (0, max_d - len(emb_clip)))
-            e2 = np.pad(emb_rad,  (0, max_d - len(emb_rad)))
-            emb = (e1 + e2) / 2.0
+# -----------------------------
+# IMAGE
+# -----------------------------
+def query_image(file_bytes):
+    try:
+        img_b64 = image_to_base64(file_bytes)
 
-        else:
-            # Case 3 – both (concatenate all three embeddings)
-            emb_txt  = text_embedding_biobert(txt)
-            emb_clip = image_embedding_biomedclip(img)
-            emb_rad  = image_embedding_radvlp(img)
-            emb = np.concatenate([emb_txt, emb_clip, emb_rad])
+        res = requests.post(
+            BIOMEDCLIP_API,
+            headers=headers,
+            json={"inputs": img_b64},
+            timeout=25
+        )
 
-        disease, risk_score = pseudo_classify(emb)
-
-    except Exception as e:
-        return json.dumps({"error": str(e)}, indent=2)
-
-    result = {"disease": disease, "risk_score": risk_score}
-    return json.dumps(result, indent=2)
-
-# ── Gradio UI ─────────────────────────────────────────────────────────────────
-
-with gr.Blocks(title="Medical Risk Assessment", theme=gr.themes.Soft()) as demo:
-    gr.Markdown(
-        """
-        # 🏥 Multimodal Medical Risk Assessment
-        Provide **symptoms**, a **medical image**, or **both** — the system adapts automatically.
-
-        | Input | Model used |
-        |---|---|
-        | Text only | BioBERT |
-        | Image only | BiomedCLIP + Rad-VLP |
-        | Both | All three (fused) |
-        """
-    )
-
-    with gr.Row():
-        with gr.Column():
-            img_upload = gr.Image(type="pil", label="Upload Medical Image (optional)")
-            b64_input  = gr.Textbox(
-                label="Or paste Base64 image (optional)",
-                placeholder="data:image/jpeg;base64,/9j/4AAQ…",
-                lines=3,
+        if res.status_code != 200:
+            res = requests.post(
+                RADVLP_API,
+                headers=headers,
+                json={"inputs": img_b64},
+                timeout=25
             )
-            symptoms   = gr.Textbox(
-                label="Symptom Description (optional)",
-                placeholder="e.g. fever, dry cough, chest pain, shortness of breath",
-                lines=4,
-            )
-            run_btn = gr.Button("🔍 Assess Risk", variant="primary")
 
-        with gr.Column():
-            output = gr.Code(label="Result (JSON)", language="json", lines=10)
+        return "Image Prediction", 0.65
 
-    run_btn.click(fn=assess, inputs=[img_upload, b64_input, symptoms], outputs=output)
+    except:
+        return "Image Failure", 0.0
 
-    gr.Examples(
-        examples=[
-            [None, "", "High fever, dry cough, shortness of breath, fatigue"],
-            [None, "", "Chest pain radiating to left arm, sweating, dizziness"],
-        ],
-        inputs=[img_upload, b64_input, symptoms],
-        label="Example symptom inputs",
-    )
+# -----------------------------
+# MAIN ENDPOINT
+# -----------------------------
+@app.post("/assess")
+async def assess(
+    symptoms: str = Form(""),
+    image: UploadFile = File(None)
+):
+    has_txt = bool(symptoms.strip())
+    has_img = image is not None
 
-if __name__ == "__main__":
-    demo.launch()
+    if not has_txt and not has_img:
+        return {"error": "Provide symptoms or image"}
+
+    # read image
+    file_bytes = None
+    if has_img:
+        file_bytes = await image.read()
+
+    # logic
+    if has_txt and not has_img:
+        d, r = query_text(symptoms)
+        mode = "BioBERT API"
+
+    elif has_img and not has_txt:
+        d, r = query_image(file_bytes)
+        mode = "BiomedCLIP API"
+
+    else:
+        d1, r1 = query_text(symptoms)
+        d2, r2 = query_image(file_bytes)
+
+        r = 0.6 * r1 + 0.4 * r2
+        d = d1 if r1 > r2 else d2
+        mode = "Multimodal Fusion"
+
+    return {
+        "disease": d,
+        "risk_score": round(r, 4),
+        "mode": mode
+    }
+
+# -----------------------------
+# ROOT
+# -----------------------------
+@app.get("/")
+def root():
+    return {"message": "Medical AI API running 🚀"}
