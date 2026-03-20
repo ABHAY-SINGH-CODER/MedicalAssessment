@@ -21,7 +21,7 @@
 
 export const config = { maxDuration: 30 };
 
-const HF_API_BASE = 'https://api-inference.huggingface.co/models';
+const HF_API_BASE = 'https://router.huggingface.co/hf-inference/models';
 const TEXT_MODEL   = 'google/medgemma-2b-it';
 const VISION_MODEL = 'google/medgemma-4b-it';
 
